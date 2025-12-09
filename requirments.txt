@@ -1,0 +1,4 @@
+fastapi
+uvicorn[standard]
+httpx  # if you want async HTTP calls to an external LLM API
+python-dotenv  # optional, if you want to load .env for secrets
