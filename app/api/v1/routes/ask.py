@@ -31,8 +31,10 @@ async def ask_llm(
     logger.debug("Request body", extra={"request": request.dict()})
 
     try:
-        llm_result = await llm_client.ask(
-            prompt=request.prompt, max_tokens=request.max_tokens
+        # ⬇️ no more `await` since ask() is now sync
+        llm_result = llm_client.ask(
+            prompt=request.prompt,
+            max_tokens=request.max_tokens,
         )
 
         answer = llm_result.get("answer", "")
@@ -42,16 +44,14 @@ async def ask_llm(
         response = AskResponse(
             answer=answer,
             model=model_name,
-            usage_tokens=usage.get("prompt_tokens", 0) + usage.get(
-                "completion_tokens", 0
-            ),
+            usage_tokens=usage.get("prompt_tokens", 0)
+            + usage.get("completion_tokens", 0),
         )
         logger.info("Successfully processed /ask request")
         logger.debug("Response body", extra={"response": response.dict()})
         return response
 
     except LLMServiceError as e:
-        # Custom error from our service layer
         logger.error("LLMServiceError encountered", extra={"error": e.message})
         raise HTTPException(
             status_code=e.status_code or status.HTTP_502_BAD_GATEWAY,
@@ -59,7 +59,6 @@ async def ask_llm(
         )
 
     except Exception as e:
-        # Catch-all safeguard
         logger.exception("Unexpected error in /ask endpoint")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

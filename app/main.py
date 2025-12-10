@@ -1,6 +1,8 @@
 # app/main.py
 import logging
 
+from dotenv import load_dotenv  # Load environment variables from .env file
+import os
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
@@ -8,6 +10,10 @@ from .api.v1 import api_v1_router
 from .core.config import settings
 from .core.logging_config import setup_logging
 from .utils.errors import LLMServiceError
+
+# Load variables from .env into environment
+load_dotenv()
+
 
 # Configure logging before creating the app
 setup_logging()

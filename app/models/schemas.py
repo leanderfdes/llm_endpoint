@@ -3,9 +3,15 @@ from pydantic import BaseModel, Field
 
 
 class AskRequest(BaseModel):
-    prompt: str = Field(..., description="User prompt or question to send to the LLM")
+    prompt: str = Field(
+        ...,
+        description="User prompt or question to send to the LLM",
+    )
     max_tokens: int | None = Field(
-        default=256, description="Maximum tokens to generate (optional)"
+        default=1024,  # ⬆ default from 256 → 1024
+        ge=1,
+        le=4096,       # ⬆ allow up to 4096 tokens
+        description="Maximum tokens to generate (1–4096).",
     )
 
 

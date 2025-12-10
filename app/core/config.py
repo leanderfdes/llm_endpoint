@@ -9,7 +9,7 @@ class Settings(BaseSettings):
 
     # Example LLM-related configs (adapt as needed)
     LLM_API_BASE_URL: str = "https://example-llm-api.com/v1/chat"
-    LLM_API_KEY: str | None = None
+    GEMINI_API_KEY: str | None = None  
 
     # Pydantic v2 style config
     model_config = SettingsConfigDict(
