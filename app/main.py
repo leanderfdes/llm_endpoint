@@ -5,6 +5,7 @@ from dotenv import load_dotenv  # Load environment variables from .env file
 import os
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from .api.v1 import api_v1_router
 from .core.config import settings
@@ -22,6 +23,19 @@ logger = logging.getLogger("app.main")
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
+)
+
+origins = [
+    "http://localhost:5173",  # Vite default
+    "http://127.0.0.1:5173",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], 
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
