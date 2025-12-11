@@ -1,8 +1,7 @@
 # app/main.py
 import logging
+from typing import List
 
-from dotenv import load_dotenv  # Load environment variables from .env file
-import os
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,10 +11,6 @@ from .core.config import settings
 from .core.logging_config import setup_logging
 from .utils.errors import LLMServiceError
 
-# Load variables from .env into environment
-load_dotenv()
-
-
 # Configure logging before creating the app
 setup_logging()
 logger = logging.getLogger("app.main")
@@ -23,20 +18,37 @@ logger = logging.getLogger("app.main")
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
+    debug=settings.DEBUG,
 )
 
-origins = [
-    "http://localhost:5173",  # Vite default
-    "http://127.0.0.1:5173",
-]
 
+def _build_allowed_origins() -> List[str]:
+    """
+    Build the allow_origins list from settings.ALLOWED_ORIGINS.
+    If not provided, default to local Vite origins for development.
+    """
+    default_local = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    if settings.ALLOWED_ORIGINS:
+        # split by comma and strip whitespace
+        items = [o.strip() for o in settings.ALLOWED_ORIGINS.split(",") if o.strip()]
+        # Merge defaults (useful for local dev) but avoid duplicates
+        merged = list(dict.fromkeys(items + default_local))
+        return merged
+    return default_local
+
+
+allowed_origins = _build_allowed_origins()
+
+# IMPORTANT: Do NOT use ["*"] in production unless you understand the risks.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+logger.info("Configured allowed CORS origins: %s", allowed_origins)
 
 
 @app.on_event("startup")

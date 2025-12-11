@@ -1,13 +1,18 @@
 // src/App.jsx
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-const API_BASE_URL = "http://127.0.0.1:8000"; // FastAPI backend
+/**
+ * Deployment note:
+ * Set VITE_API_BASE_URL in your Vercel project settings (e.g. https://your-backend.onrender.com)
+ * If not set, this falls back to the local dev backend: http://127.0.0.1:8000
+ */
+const RAW_API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+// remove trailing slash if present
+const API_BASE_URL = RAW_API_BASE.replace(/\/+$/, "");
 
 // === Example pool ===
-// Add or edit prompts here — the UI will show 3 unique ones at a time,
-// picked randomly on load and after each successful ask.
 const ALL_EXAMPLES = [
   "Write a short motivational quote about staying consistent as a developer.",
   "Explain what an API is in simple terms for a beginner.",
@@ -105,7 +110,7 @@ function App() {
   const [typingSpeed] = useState(6); // ms per char
   const [copied, setCopied] = useState(false);
 
-  // Refresh examples on mount (ensures randomness) - optional
+  // Refresh examples on mount (ensures randomness)
   useEffect(() => {
     setExamples(sampleUnique(ALL_EXAMPLES, 3));
   }, []);
@@ -137,32 +142,44 @@ function App() {
       const res = await fetch(`${API_BASE_URL}/api/v1/ask`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: trimmed, max_tokens: maxTokens })
+        body: JSON.stringify({ prompt: trimmed, max_tokens: maxTokens }),
       });
 
-      const data = await res.json();
+      // handle non-json or network errors gracefully
+      const contentType = res.headers.get("content-type") || "";
+      const data = contentType.includes("application/json") ? await res.json() : null;
+
       if (!res.ok) {
-        const detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+        // prefer server-provided detail, else the whole body
+        const detail =
+          data && typeof data.detail === "string"
+            ? data.detail
+            : data && data.detail
+            ? JSON.stringify(data.detail)
+            : `Request failed with status ${res.status}`;
         throw new Error(detail || "Request failed");
       }
 
-      const newAnswer = data.answer || "";
-      const newModel = data.model || "";
-      const newUsage = data.usage_tokens ?? null;
+      const newAnswer = (data && data.answer) || "";
+      const newModel = (data && data.model) || "";
+      // backend returns usage_tokens as a single number (AskResponse)
+      const newUsage = data && (data.usage_tokens ?? null);
 
       setAnswer(newAnswer);
       setModel(newModel);
       setUsageTokens(newUsage);
 
-      setHistory(prev => [
+      setHistory((prev) => [
         { id: Date.now(), prompt: trimmed, answer: newAnswer },
-        ...prev.slice(0, 4)
+        ...prev.slice(0, 4), // keep last 5
       ]);
 
       // start typing animation, then rotate examples when done
       setTyping(true);
     } catch (err) {
-      setError(err.message || "Something went wrong while contacting the API.");
+      // Network errors or thrown errors land here
+      const msg = err?.message || "Something went wrong while contacting the API.";
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -181,6 +198,7 @@ function App() {
 
   const handleCopy = async () => {
     try {
+      if (!answer) return;
       await navigator.clipboard.writeText(answer || "");
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);

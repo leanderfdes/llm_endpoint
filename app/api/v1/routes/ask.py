@@ -1,5 +1,7 @@
 # app/api/v1/routes/ask.py
 import logging
+from functools import lru_cache
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -12,8 +14,12 @@ logger = logging.getLogger("app.api.v1.ask")
 router = APIRouter(prefix="/ask", tags=["ask"])
 
 
+@lru_cache(maxsize=1)
 def get_llm_client() -> LLMClient:
-    """Dependency injection for LLMClient."""
+    """
+    Cached dependency that returns a single LLMClient instance per process.
+    This prevents re-initializing the Gemini client for every incoming request.
+    """
     return LLMClient()
 
 
@@ -31,7 +37,6 @@ async def ask_llm(
     logger.debug("Request body", extra={"request": request.dict()})
 
     try:
-        # ⬇️ no more `await` since ask() is now sync
         llm_result = llm_client.ask(
             prompt=request.prompt,
             max_tokens=request.max_tokens,
@@ -41,21 +46,28 @@ async def ask_llm(
         model_name = llm_result.get("model")
         usage = llm_result.get("usage") or {}
 
+        # compute usage tokens defensively
+        prompt_tokens = usage.get("prompt_tokens") or 0
+        completion_tokens = usage.get("completion_tokens") or 0
+        total_tokens = usage.get("total_tokens")
+        # If total_tokens missing, sum prompt + completion
+        usage_tokens = int(total_tokens) if total_tokens else int(prompt_tokens) + int(completion_tokens)
+
         response = AskResponse(
             answer=answer,
             model=model_name,
-            usage_tokens=usage.get("prompt_tokens", 0)
-            + usage.get("completion_tokens", 0),
+            usage_tokens=usage_tokens,
         )
         logger.info("Successfully processed /ask request")
         logger.debug("Response body", extra={"response": response.dict()})
         return response
 
     except LLMServiceError as e:
-        logger.error("LLMServiceError encountered", extra={"error": e.message})
+        # LLMServiceError includes a message and optionally status_code
+        logger.error("LLMServiceError encountered", extra={"error": getattr(e, "message", str(e))})
         raise HTTPException(
-            status_code=e.status_code or status.HTTP_502_BAD_GATEWAY,
-            detail=e.message,
+            status_code=getattr(e, "status_code", status.HTTP_502_BAD_GATEWAY),
+            detail=getattr(e, "message", str(e)),
         )
 
     except Exception as e:

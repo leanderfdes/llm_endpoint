@@ -1,22 +1,54 @@
-# app/core/config.py
-from pydantic_settings import BaseSettings, SettingsConfigDict
+# app/core/logging_config.py
+import logging
+from logging.config import dictConfig
+
+from .config import settings
 
 
-class Settings(BaseSettings):
-    APP_NAME: str = "LLM API"
-    APP_VERSION: str = "1.0.0"
-    DEBUG: bool = True
+def setup_logging() -> None:
+    """Configure logging for the application."""
+    log_level = "DEBUG" if settings.DEBUG else "INFO"
 
-    # Example LLM-related configs (adapt as needed)
-    LLM_API_BASE_URL: str = "https://example-llm-api.com/v1/chat"
-    GEMINI_API_KEY: str | None = None  
+    logging_config = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "default": {
+                "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            },
+        },
+        "handlers": {
+            "console": {
+                "class": "logging.StreamHandler",
+                "formatter": "default",
+            },
+        },
+        "loggers": {
+            "uvicorn.error": {
+                "level": log_level,
+                "handlers": ["console"],
+                "propagate": False,
+            },
+            "uvicorn.access": {
+                "level": log_level,
+                "handlers": ["console"],
+                "propagate": False,
+            },
+            "app": {  # our own logger namespace
+                "level": log_level,
+                "handlers": ["console"],
+                "propagate": False,
+            },
+            "app.services.llm_client": {
+                "level": log_level,
+                "handlers": ["console"],
+                "propagate": False,
+            },
+        },
+        "root": {
+            "level": log_level,
+            "handlers": ["console"],
+        },
+    }
 
-    # Pydantic v2 style config
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
-
-
-settings = Settings()
+    dictConfig(logging_config)
