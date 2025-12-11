@@ -1,7 +1,91 @@
 // src/App.jsx
-import { useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 const API_BASE_URL = "http://127.0.0.1:8000"; // FastAPI backend
+
+// === Example pool ===
+// Add or edit prompts here — the UI will show 3 unique ones at a time,
+// picked randomly on load and after each successful ask.
+const ALL_EXAMPLES = [
+  "Write a short motivational quote about staying consistent as a developer.",
+  "Explain what an API is in simple terms for a beginner.",
+  "Give three bullet points on why logging is important in backend systems.",
+  "Describe the difference between synchronous and asynchronous code with examples.",
+  "Write a concise README section that explains how to run a FastAPI app locally.",
+  "Suggest 5 good interview questions for a backend engineer role and short answers.",
+  "Rewrite the following into a tweet: 'Logging helps detect issues early and saves debugging time.'",
+  "Explain the concept of rate limiting and why it's important for APIs.",
+  "Give three tips for writing clearer commit messages.",
+  "List 3 ways to reduce latency in web APIs and a short explanation for each.",
+  "Provide a short checklist for preparing a project for production deployment.",
+  "How would you explain 'token' in LLMs to a non-technical person?",
+  "Give 4 guardrails for safe LLM prompt engineering in a customer-facing app.",
+  "What are the pros and cons of server-side rendering vs client-side rendering?",
+  "Create a short elevator pitch for an LLM-based customer support assistant."
+];
+
+// Pick n unique random items from an array
+function sampleUnique(arr, n, exclude = []) {
+  const pool = arr.filter((x) => !exclude.includes(x));
+  if (n >= pool.length) return [...pool];
+  const out = [];
+  const used = new Set();
+  while (out.length < n) {
+    const idx = Math.floor(Math.random() * pool.length);
+    if (used.has(idx)) continue;
+    used.add(idx);
+    out.push(pool[idx]);
+  }
+  return out;
+}
+
+/**
+ * Typewriter: simple controlled typewriter that reveals `text` at `msPerChar`.
+ * - shows plain-text progressively
+ * - calls onDone() when finished typing
+ */
+function Typewriter({ text = "", msPerChar = 10, onDone }) {
+  const [pos, setPos] = useState(0);
+
+  useEffect(() => {
+    setPos(0);
+    if (!text) {
+      onDone?.();
+      return;
+    }
+
+    let cancelled = false;
+    const total = text.length;
+    let i = 0;
+
+    function step() {
+      if (cancelled) return;
+      i += 1;
+      setPos(i);
+      if (i >= total) {
+        onDone?.();
+        return;
+      }
+      timeout = setTimeout(step, msPerChar);
+    }
+
+    let timeout = setTimeout(step, msPerChar);
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, msPerChar]);
+
+  return (
+    <div className="typewriter">
+      <span>{text.slice(0, pos)}</span>
+      <span className="typewriter-caret" />
+    </div>
+  );
+}
 
 function App() {
   const [prompt, setPrompt] = useState("");
@@ -13,12 +97,32 @@ function App() {
   const [error, setError] = useState("");
   const [history, setHistory] = useState([]);
 
+  // quick examples state: show 3 at a time
+  const [examples, setExamples] = useState(() => sampleUnique(ALL_EXAMPLES, 3));
+
+  // Typewriter & copy state
+  const [typing, setTyping] = useState(false);
+  const [typingSpeed] = useState(6); // ms per char
+  const [copied, setCopied] = useState(false);
+
+  // Refresh examples on mount (ensures randomness) - optional
+  useEffect(() => {
+    setExamples(sampleUnique(ALL_EXAMPLES, 3));
+  }, []);
+
+  // Helper to rotate to new examples (optionally exclude current prompt)
+  const rotateExamples = (excludePrompt = "") => {
+    const newSet = sampleUnique(ALL_EXAMPLES, 3, excludePrompt ? [excludePrompt] : []);
+    setExamples(newSet);
+  };
+
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    e?.preventDefault?.();
     setError("");
     setAnswer("");
     setModel("");
     setUsageTokens(null);
+    setCopied(false);
 
     const trimmed = prompt.trim();
     if (!trimmed) {
@@ -27,25 +131,18 @@ function App() {
     }
 
     setLoading(true);
+    setTyping(false);
+
     try {
       const res = await fetch(`${API_BASE_URL}/api/v1/ask`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          prompt: trimmed,
-          max_tokens: maxTokens,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: trimmed, max_tokens: maxTokens })
       });
 
       const data = await res.json();
-
       if (!res.ok) {
-        const detail =
-          typeof data.detail === "string"
-            ? data.detail
-            : JSON.stringify(data.detail);
+        const detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
         throw new Error(detail || "Request failed");
       }
 
@@ -57,14 +154,13 @@ function App() {
       setModel(newModel);
       setUsageTokens(newUsage);
 
-      setHistory((prev) => [
-        {
-          id: Date.now(),
-          prompt: trimmed,
-          answer: newAnswer,
-        },
-        ...prev.slice(0, 4), // keep last 5
+      setHistory(prev => [
+        { id: Date.now(), prompt: trimmed, answer: newAnswer },
+        ...prev.slice(0, 4)
       ]);
+
+      // start typing animation, then rotate examples when done
+      setTyping(true);
     } catch (err) {
       setError(err.message || "Something went wrong while contacting the API.");
     } finally {
@@ -76,21 +172,38 @@ function App() {
     setPrompt(text);
     setAnswer("");
     setError("");
+    setCopied(false);
+    setTyping(false);
   };
 
-  // optional: format big token numbers with commas
   const formatTokens = (n) =>
-    n.toLocaleString("en-IN", { maximumFractionDigits: 0 });
+    n?.toLocaleString?.("en-IN", { maximumFractionDigits: 0 }) ?? n;
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(answer || "");
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  // When typewriter finishes, rotate examples (exclude current prompt so it doesn't immediately reappear)
+  const onTypingDone = () => {
+    setTyping(false);
+    rotateExamples(prompt);
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-950 text-slate-50">
-      {/* Main content */}
-      <main className="flex-1 px-4 pt-6 pb-16 md:pt-10 md:pb-20">
-        <div className="w-full max-w-5xl mx-auto grid gap-6 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-
-          {/* Left: Input + controls */}
+      <main className="flex-1 px-1 pt-6 pb-20 md:pt-10 md:pb-28">
+        <div
+          className="w-full mx-1 grid gap-6
+                    md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,320px)]"
+        >
+          {/* LEFT: prompt + controls */}
           <section className="bg-slate-900/80 border border-slate-800 rounded-3xl shadow-2xl shadow-slate-950/60 p-6 md:p-8 backdrop-blur">
-            {/* Header */}
             <header className="mb-6">
               <div className="inline-flex items-center gap-2 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-200">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -100,12 +213,11 @@ function App() {
                 LLM Playground
               </h1>
               <p className="mt-1 text-sm md:text-base text-slate-400">
-                Minimal client for your FastAPI + Gemini backend. Experiment
-                with prompts, inspect responses, and iterate like an engineer.
+                Minimal client for your FastAPI + Gemini backend. Experiment with
+                prompts, inspect responses, and iterate like an engineer.
               </p>
             </header>
 
-            {/* Form */}
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>
                 <label className="block text-xs font-medium uppercase tracking-wide text-slate-400 mb-2">
@@ -113,7 +225,7 @@ function App() {
                 </label>
                 <textarea
                   className="w-full h-32 md:h-40 resize-none rounded-2xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm md:text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/60 focus:border-emerald-500 transition"
-                  placeholder="Ask anything... e.g. “Write a two-line motivational quote about learning backend development.”"
+                  placeholder='Ask anything... e.g. "Write a two-line motivational quote about learning backend development."'
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                 />
@@ -163,24 +275,18 @@ function App() {
               </div>
             </form>
 
-            {/* Error */}
             {error && (
               <div className="mt-4 rounded-2xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs md:text-sm text-red-200">
                 {error}
               </div>
             )}
 
-            {/* Examples */}
             <div className="mt-5">
               <p className="text-xs uppercase tracking-wide text-slate-500 mb-2">
                 Quick examples
               </p>
               <div className="flex flex-wrap gap-2">
-                {[
-                  "Write a short motivational quote about staying consistent as a developer.",
-                  "Explain what an API is in simple terms for a beginner.",
-                  "Give three bullet points on why logging is important in backend systems.",
-                ].map((ex) => (
+                {examples.map((ex) => (
                   <button
                     key={ex}
                     type="button"
@@ -194,102 +300,110 @@ function App() {
             </div>
           </section>
 
-          {/* Right: Response + history */}
-          <section className="space-y-4">
-            {/* Response card */}
-            <div className="h-full bg-slate-900/70 border border-slate-800 rounded-3xl p-5 md:p-6 flex flex-col">
-              <div className="flex items-center justify-between gap-2 mb-3">
-                <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                  Response
-                </h2>
-                <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                  {model && (
-                    <span className="px-2 py-1 rounded-full bg-slate-950/70 border border-slate-700">
-                      {model}
-                    </span>
-                  )}
-                  {usageTokens != null && (
-                    <span className="px-2 py-1 rounded-full bg-slate-950/70 border border-slate-700">
-                      {usageTokens} tokens
-                    </span>
-                  )}
-                </div>
-              </div>
+          {/* MIDDLE: Response panel */}
+          <section className="bg-slate-900/70 border border-slate-800 rounded-3xl p-5 md:p-6 flex flex-col">
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Response
+              </h2>
 
-              <div className="flex-1 rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-sm md:text-[15px] text-slate-100 whitespace-pre-wrap overflow-y-auto">
-                {loading && !answer && !error && (
-                  <p className="text-slate-500 text-sm">
-                    Model is generating a response…
-                  </p>
+              <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                {model && (
+                  <span className="px-2 py-1 rounded-full bg-slate-950/70 border border-slate-700">
+                    {model}
+                  </span>
                 )}
-                {!loading && !answer && !error && (
-                  <p className="text-slate-500 text-sm">
-                    Your answer will appear here. Submit a prompt to see what
-                    the model returns.
-                  </p>
+                {usageTokens != null && (
+                  <span className="px-2 py-1 rounded-full bg-slate-950/70 border border-slate-700">
+                    {usageTokens} tokens
+                  </span>
                 )}
-                {answer && !loading && <p>{answer}</p>}
+                <button
+                  onClick={handleCopy}
+                  className="copy-btn ml-1 inline-flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/70 px-2 py-1 text-xs text-slate-300 hover:bg-slate-900/90"
+                >
+                  {copied ? "Copied!" : "Copy"}
+                </button>
               </div>
             </div>
 
-            {/* History card */}
-            <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-4 md:p-5">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                  Recent prompts
-                </h3>
-                {history.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setHistory([])}
-                    className="text-[11px] text-slate-500 hover:text-slate-300"
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-              {history.length === 0 ? (
-                <p className="text-xs text-slate-500">
-                  Your last few prompts will be listed here for quick reuse.
+            <div className="flex-1 rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-sm md:text-[15px] text-slate-100 whitespace-pre-wrap overflow-y-auto">
+              {loading && !answer && !error && (
+                <p className="text-slate-500 text-sm">Model is generating a response…</p>
+              )}
+
+              {/* Typewriter: show plain-type effect while typing */}
+              {typing && answer && (
+                <Typewriter text={answer} msPerChar={typingSpeed} onDone={onTypingDone} />
+              )}
+
+              {/* When typing finishes (typing === false) show rendered markdown */}
+              {!typing && answer && !loading && (
+                <div className="prose prose-invert max-w-none">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{answer}</ReactMarkdown>
+                </div>
+              )}
+
+              {!loading && !answer && !error && (
+                <p className="text-slate-500 text-sm">
+                  Your answer will appear here. Submit a prompt to see what the model returns.
                 </p>
-              ) : (
-                <ul className="space-y-2 max-h-40 overflow-y-auto">
-                  {history.map((item) => (
-                    <li
-                      key={item.id}
-                      className="group rounded-2xl border border-slate-800 bg-slate-950/50 px-3 py-2 text-xs text-slate-300 hover:border-emerald-500/50 transition"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => handleUseExample(item.prompt)}
-                        className="text-left w-full"
-                      >
-                        <p className="line-clamp-2 text-slate-200 group-hover:text-emerald-100">
-                          {item.prompt}
-                        </p>
-                        <p className="mt-1 text-[11px] text-slate-500 line-clamp-1">
-                          {item.answer}
-                        </p>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
               )}
             </div>
           </section>
+
+          {/* RIGHT: Recent prompts */}
+          <aside className="relative bg-slate-900/60 border border-slate-800 rounded-3xl p-4 md:p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Recent prompts
+              </h3>
+              {history.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setHistory([])}
+                  className="text-[11px] text-slate-500 hover:text-slate-300"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
+            <ul className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
+              {history.length === 0 ? (
+                <li className="text-xs text-slate-500">No recent prompts yet.</li>
+              ) : (
+                history.map((item) => (
+                  <li
+                    key={item.id}
+                    className="group rounded-2xl border border-slate-800 bg-slate-950/50 px-3 py-2 text-xs text-slate-300 hover:border-emerald-500/50 transition"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleUseExample(item.prompt)}
+                      className="text-left w-full"
+                    >
+                      <p className="line-clamp-2 text-slate-200 group-hover:text-emerald-100">
+                        {item.prompt}
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-500 line-clamp-1">
+                        {item.answer}
+                      </p>
+                    </button>
+                  </li>
+                ))
+              )}
+            </ul>
+          </aside>
         </div>
       </main>
 
-      <div className="w-full mt-10 pb-6 text-center text-[11px] md:text-xs text-slate-500 space-y-1">
+      {/* Bottom meta */}
+      <div className="w-full mt-10 pb-6 text-center text-[11px] md:text-xs text-slate-500 space-y-1 clear-both">
         <div>
-          Built with{" "}
-          <span className="text-slate-300">
-            FastAPI · Gemini · React · Tailwind CSS
-          </span>
+          Built with <span className="text-slate-300">FastAPI · Gemini · React · Tailwind CSS</span>
         </div>
-        <div className="text-slate-400">
-          LLM Playground · Industry-ready LLM client UI
-        </div>
+        <div className="text-slate-400">LLM Playground · Industry-ready LLM client UI</div>
       </div>
     </div>
   );

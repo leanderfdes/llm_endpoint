@@ -2,6 +2,55 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  @apply bg-slate-950 text-slate-100;
+/* Small prose tweaks for dark mode */
+@layer base {
+  .prose-invert {
+    color: #e2e8f0;
+  }
+  .prose-invert strong {
+    color: #fff;
+  }
+  .prose-invert p {
+    margin: 0.3rem 0;
+  }
+  .prose-invert code {
+    background: #0b1220;
+    padding: 2px 6px;
+    border-radius: 6px;
+    color: #cbd5e1;
+  }
+  .prose-invert pre {
+    background: #071026;
+    padding: 10px;
+    border-radius: 8px;
+    overflow: auto;
+  }
+
+  /* Typewriter caret animation */
+  .typewriter {
+    display: inline-block;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.4;
+  }
+  .typewriter-caret {
+    display: inline-block;
+    width: 1px;
+    background: #c7f3dd;
+    margin-left: 2px;
+    animation: blink 1s steps(2, start) infinite;
+    vertical-align: bottom;
+    height: 1.1em;
+  }
+  @keyframes blink {
+    50% { opacity: 0; }
+  }
+
+  /* Small copy button */
+  .copy-btn {
+    transition: all .14s ease;
+  }
+  .copy-btn:active {
+    transform: translateY(1px) scale(.995);
+  }
 }
