@@ -25,21 +25,27 @@ app = FastAPI(
 def _build_allowed_origins() -> List[str]:
     """
     Build the allow_origins list from settings.ALLOWED_ORIGINS.
-    If not provided, default to local Vite origins for development.
+    Includes Vercel frontend and local dev URLs.
     """
-    default_local = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    vercel_frontend = "https://llm-playground-fastapi-gemini-nffi.vercel.app"
+
+    default_local = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        vercel_frontend,
+    ]
+
     if settings.ALLOWED_ORIGINS:
-        # split by comma and strip whitespace
         items = [o.strip() for o in settings.ALLOWED_ORIGINS.split(",") if o.strip()]
-        # Merge defaults (useful for local dev) but avoid duplicates
         merged = list(dict.fromkeys(items + default_local))
         return merged
+
     return default_local
 
 
 allowed_origins = _build_allowed_origins()
 
-# IMPORTANT: Do NOT use ["*"] in production unless you understand the risks.
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
@@ -61,7 +67,6 @@ async def shutdown_event():
     logger.info("Shutting down the application")
 
 
-# Register global exception handler for LLMServiceError (optional but neat)
 @app.exception_handler(LLMServiceError)
 async def llm_service_error_handler(request: Request, exc: LLMServiceError):
     logger.error(
@@ -77,13 +82,14 @@ async def llm_service_error_handler(request: Request, exc: LLMServiceError):
     )
 
 
-# Include versioned API routers
+# Versioned API routers
 app.include_router(api_v1_router, prefix="/api/v1")
 
 
 @app.get("/", tags=["health"])
 async def health_check():
-    """
-    Simple health check endpoint.
-    """
-    return {"status": "ok", "app": settings.APP_NAME, "version": settings.APP_VERSION}
+    return {
+        "status": "ok",
+        "app": settings.APP_NAME,
+        "version": settings.APP_VERSION
+    }
