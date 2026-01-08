@@ -4,7 +4,7 @@
 Designed to showcase **real-world LLM integration, clean architecture, and production deployment**.
 
 ## 🖥️ Live Demo
-👉 https://llm-playground-fastapi-gemini-nffi-ou4twwlmk.vercel.app/
+👉 https://llm-playground-fastapi-gemini-nffi-ou4twwlmk.vercel.app?_vercel_share=XqykOxvDnZV4Ovitr3Xpg8nqipf37LFH
 
 ![LLM Playground Screenshot](assets/ui-main.png)
 
